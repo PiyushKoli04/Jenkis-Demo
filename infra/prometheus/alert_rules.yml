@@ -1,0 +1,21 @@
+groups:
+  - name: expense_tracker_alerts
+    rules:
+      - alert: AppDown
+        expr: up{job="expense-app"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Expense Tracker Application is Down"
+          description: "The expense-app container has been unreachable for more than 30 seconds."
+
+      # Alert for high CPU usage: set to 1m for demo purposes (production typically uses 5m)
+      - alert: HighCPUUsage
+        expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100) > 80
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU Usage Detected"
+          description: "Node CPU utilization is above 80% for more than 1 minute."
