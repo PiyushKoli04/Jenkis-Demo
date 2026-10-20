@@ -74,7 +74,13 @@ def index():
     expenses = conn.execute('SELECT * FROM expenses ORDER BY date DESC, id DESC').fetchall()
     conn.close()
     total = sum(e['amount'] for e in expenses)
-    return render_template('index.html', expenses=expenses, total=total)
+    count = len(expenses)
+    # Build category summary for UI stats
+    categories = {}
+    for e in expenses:
+        cat = e['category']
+        categories[cat] = categories.get(cat, 0) + e['amount']
+    return render_template('index.html', expenses=expenses, total=total, count=count, categories=categories)
 
 @app.route('/add', methods=['GET', 'POST'])
 def add_expense():

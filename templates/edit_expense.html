@@ -3,15 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edit Expense - Expense Tracker</title>
+    <title>Edit Expense</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <h1>Edit Expense</h1>
+<div class="container">
+
+    <p><a href="{{ url_for('index') }}">&larr; Back</a></p>
+
+    <div class="form-box">
+        <h2 style="margin-top:0;">Edit Expense</h2>
+
         {% if error %}
-        <div class="error-msg">{{ error }}</div>
+        <div class="error">{{ error }}</div>
         {% endif %}
+
         <form method="POST" action="{{ url_for('edit_expense', id=expense['id']) }}">
             <div class="form-group">
                 <label for="title">Title</label>
@@ -29,11 +35,13 @@
                 <label for="date">Date</label>
                 <input type="date" id="date" name="date" value="{{ expense['date'] }}" required>
             </div>
-            <div style="margin-top: 20px;">
-                <button type="submit" class="btn btn-primary">Update Expense</button>
-                <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancel</a>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-blue">Update</button>
+                <a href="{{ url_for('index') }}" class="btn btn-gray">Cancel</a>
             </div>
         </form>
     </div>
+
+</div>
 </body>
 </html>
