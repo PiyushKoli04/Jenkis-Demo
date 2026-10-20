@@ -133,3 +133,61 @@ def test_metrics_returns_200_and_contains_metric(client):
     assert response.status_code == 200
     content = response.data.decode('utf-8')
     assert "flask_http_request_total" in content
+
+def test_export_csv_returns_csv(client):
+    client.post('/api/expenses', json={
+        "title": "Coffee",
+        "amount": 3.50,
+        "category": "Food",
+        "date": "2026-04-01"
+    })
+    response = client.get('/export')
+    assert response.status_code == 200
+    assert "text/csv" in response.content_type
+    assert "expenses.csv" in response.headers.get("Content-Disposition", "")
+    data = response.data.decode('utf-8')
+    assert "Title,Amount,Category,Date" in data
+    assert "Coffee" in data
+
+def test_api_summary_returns_stats(client):
+    client.post('/api/expenses', json={
+        "title": "Groceries",
+        "amount": 50.00,
+        "category": "Food",
+        "date": "2026-04-01"
+    })
+    client.post('/api/expenses', json={
+        "title": "Bus",
+        "amount": 10.00,
+        "category": "Travel",
+        "date": "2026-04-02"
+    })
+    response = client.get('/api/summary')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["total"] == 60.00
+    assert data["count"] == 2
+    assert data["average"] == 30.00
+    assert data["categories"]["Food"] == 50.00
+    assert data["top_category"] == "Food"
+
+def test_web_add_expense_post(client):
+    response = client.post('/add', data={
+        "title": "Dinner",
+        "amount": "22.50",
+        "category": "Food",
+        "date": "2026-04-03"
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b"Dinner" in response.data
+
+def test_index_with_category_filter(client):
+    client.post('/api/expenses', json={
+        "title": "Cinema",
+        "amount": 15.00,
+        "category": "Entertainment",
+        "date": "2026-04-04"
+    })
+    response = client.get('/?category=Entertainment')
+    assert response.status_code == 200
+    assert b"Cinema" in response.data

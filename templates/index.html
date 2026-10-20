@@ -7,71 +7,228 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-<div class="container">
 
-    <div class="header">
-        <h1>Expense Tracker</h1>
-        <a href="{{ url_for('add_expense') }}" class="btn btn-blue">+ Add Expense</a>
+<!-- Top bar -->
+<div class="topbar">
+    <div class="topbar-inner">
+        <a href="{{ url_for('index') }}" class="logo">
+            <span class="logo-dot"></span> Expense Tracker
+        </a>
+        <div class="topbar-actions">
+            <a href="{{ url_for('export_csv') }}" class="btn btn-outline btn-sm">Export CSV</a>
+            <a href="{{ url_for('add_expense') }}" class="btn btn-blue btn-sm">+ Add Expense</a>
+        </div>
+    </div>
+</div>
+
+<div class="wrap">
+
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="flash flash-{{ category }}">
+        <span>{{ message }}</span>
+        <button class="flash-close" onclick="this.parentElement.remove()">&times;</button>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    <!-- Stats -->
+    <div class="stats">
+        <div class="stat-box">
+            <div class="stat-label">Total Spent</div>
+            <div class="stat-num blue">${{ "%.2f"|format(grand_total) }}</div>
+            {% if cat_filter or date_from or date_to %}
+            <div class="stat-sub">Filtered: ${{ "%.2f"|format(total) }}</div>
+            {% endif %}
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Expenses</div>
+            <div class="stat-num green">{{ grand_count }}</div>
+            {% if cat_filter or date_from or date_to %}
+            <div class="stat-sub">Showing: {{ count }}</div>
+            {% endif %}
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Categories</div>
+            <div class="stat-num orange">{{ all_categories|length }}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Average</div>
+            <div class="stat-num purple">
+                {% if grand_count > 0 %}${{ "%.2f"|format(grand_total / grand_count) }}{% else %}$0.00{% endif %}
+            </div>
+        </div>
     </div>
 
-    <div class="total">Total: ${{ "%.2f"|format(total) }} &nbsp;·&nbsp; {{ count }} expense{{ 's' if count != 1 else '' }}</div>
-
     <!-- Quick add -->
-    <form action="{{ url_for('add_expense') }}" method="POST" class="inline-form">
-        <div class="field">
-            <label>Title</label>
-            <input type="text" name="title" placeholder="e.g. Lunch" required>
-        </div>
-        <div class="field">
-            <label>Amount</label>
-            <input type="number" step="0.01" name="amount" placeholder="0.00" required>
-        </div>
-        <div class="field">
+    <div class="quick-add">
+        <div class="quick-add-title">Quick Add</div>
+        <form action="{{ url_for('add_expense') }}" method="POST" class="quick-add-row">
+            <div class="field">
+                <label>Title</label>
+                <input type="text" name="title" placeholder="e.g. Lunch" required>
+            </div>
+            <div class="field">
+                <label>Amount</label>
+                <input type="number" step="0.01" min="0.01" name="amount" placeholder="0.00" required>
+            </div>
+            <div class="field">
+                <label>Category</label>
+                <input type="text" name="category" placeholder="e.g. Food" required list="cat-list">
+                <datalist id="cat-list">
+                    {% for c in all_categories %}<option value="{{ c }}">{% endfor %}
+                </datalist>
+            </div>
+            <div class="field">
+                <label>Date</label>
+                <input type="date" name="date" id="quickDate" required>
+            </div>
+            <button type="submit" class="btn btn-blue">Add</button>
+        </form>
+    </div>
+
+    <!-- Filters -->
+    <form method="GET" action="{{ url_for('index') }}" class="filters">
+        <div class="filter-group">
             <label>Category</label>
-            <input type="text" name="category" placeholder="e.g. Food" required>
+            <select name="category">
+                <option value="">All</option>
+                {% for c in all_categories %}
+                <option value="{{ c }}" {{ 'selected' if c == cat_filter }}>{{ c }}</option>
+                {% endfor %}
+            </select>
         </div>
-        <div class="field">
-            <label>Date</label>
-            <input type="date" name="date" id="quickDate" required>
+        <div class="filter-group">
+            <label>From</label>
+            <input type="date" name="date_from" value="{{ date_from }}">
         </div>
-        <button type="submit" class="btn btn-blue">Add</button>
+        <div class="filter-group">
+            <label>To</label>
+            <input type="date" name="date_to" value="{{ date_to }}">
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="btn btn-gray btn-sm">Apply</button>
+            {% if cat_filter or date_from or date_to %}
+            <a href="{{ url_for('index') }}" class="btn btn-outline btn-sm">Clear</a>
+            {% endif %}
+        </div>
     </form>
 
-    <h2>Expenses</h2>
+    <!-- Expenses table -->
+    <div class="table-card">
+        <div class="table-top">
+            <h2>Expenses</h2>
+            <span>{{ count }} record{{ 's' if count != 1 }}</span>
+        </div>
 
-    {% if expenses %}
-    <table>
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Title</th>
-                <th>Category</th>
-                <th>Amount</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for e in expenses %}
-            <tr>
-                <td>{{ e['date'] }}</td>
-                <td>{{ e['title'] }}</td>
-                <td>{{ e['category'] }}</td>
-                <td>${{ "%.2f"|format(e['amount']) }}</td>
-                <td>
-                    <a href="{{ url_for('edit_expense', id=e['id']) }}" class="link-edit">Edit</a>
-                    <a href="{{ url_for('delete_expense', id=e['id']) }}" class="link-red" onclick="return confirm('Delete this expense?')">Delete</a>
-                </td>
-            </tr>
+        {% if expenses %}
+        <div class="search-row">
+            <input type="text" id="search" placeholder="Search by title..." oninput="searchTable()">
+        </div>
+        <table id="expenseTable">
+            <thead>
+                <tr>
+                    <th onclick="sortTable(0)">Date <span class="sort-arrow">&#8597;</span></th>
+                    <th onclick="sortTable(1)">Title <span class="sort-arrow">&#8597;</span></th>
+                    <th onclick="sortTable(2)">Category <span class="sort-arrow">&#8597;</span></th>
+                    <th onclick="sortTable(3)">Amount <span class="sort-arrow">&#8597;</span></th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in expenses %}
+                <tr>
+                    <td class="date-cell">{{ e['date'] }}</td>
+                    <td>{{ e['title'] }}</td>
+                    <td><span class="cat-pill">{{ e['category'] }}</span></td>
+                    <td class="amount-cell">${{ "%.2f"|format(e['amount']) }}</td>
+                    <td>
+                        <div class="actions-cell">
+                            <a href="{{ url_for('edit_expense', id=e['id']) }}" class="act-btn act-edit">Edit</a>
+                            <a href="{{ url_for('delete_expense', id=e['id']) }}" class="act-btn act-del" onclick="return confirm('Delete &quot;{{ e['title'] }}&quot;?')">Delete</a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty">
+            <div class="empty-title">No expenses found</div>
+            <div class="empty-sub">
+                {% if cat_filter or date_from or date_to %}
+                Try changing or clearing your filters.
+                {% else %}
+                Add your first expense using the form above.
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Category breakdown -->
+    {% if categories %}
+    <div class="breakdown">
+        <div class="breakdown-head">Spending by Category</div>
+        <ul class="breakdown-list">
+            {% for cat, amt in categories.items() %}
+            <li class="breakdown-item">
+                <span class="breakdown-name">{{ cat }}</span>
+                <div class="breakdown-bar-bg">
+                    <div class="breakdown-bar" style="width: {{ (amt / total * 100)|round(1) }}%"></div>
+                </div>
+                <span class="breakdown-amt">${{ "%.2f"|format(amt) }}</span>
+            </li>
             {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <div class="empty">No expenses yet. Add one above.</div>
+        </ul>
+    </div>
     {% endif %}
 
 </div>
+
 <script>
+// Default date to today
 document.getElementById('quickDate').value = new Date().toISOString().split('T')[0];
+
+// Search
+function searchTable() {
+    var q = document.getElementById('search').value.toLowerCase();
+    var rows = document.querySelectorAll('#expenseTable tbody tr');
+    rows.forEach(function(row) {
+        var title = row.cells[1].textContent.toLowerCase();
+        var cat = row.cells[2].textContent.toLowerCase();
+        row.style.display = (title.includes(q) || cat.includes(q)) ? '' : 'none';
+    });
+}
+
+// Sort
+var sortDir = {};
+function sortTable(col) {
+    var table = document.getElementById('expenseTable');
+    var tbody = table.querySelector('tbody');
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    sortDir[col] = !sortDir[col];
+    rows.sort(function(a, b) {
+        var aText = a.cells[col].textContent.trim();
+        var bText = b.cells[col].textContent.trim();
+        if (col === 3) {
+            aText = parseFloat(aText.replace('$', ''));
+            bText = parseFloat(bText.replace('$', ''));
+            return sortDir[col] ? aText - bText : bText - aText;
+        }
+        return sortDir[col] ? aText.localeCompare(bText) : bText.localeCompare(aText);
+    });
+    rows.forEach(function(row) { tbody.appendChild(row); });
+}
+
+// Auto-dismiss flash after 4s
+setTimeout(function() {
+    document.querySelectorAll('.flash').forEach(function(el) { el.remove(); });
+}, 4000);
 </script>
+
 </body>
 </html>

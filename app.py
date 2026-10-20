@@ -1,11 +1,14 @@
 import os
+import io
+import csv
 import sqlite3
 import time
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, Response
 from prometheus_flask_exporter import PrometheusMetrics
 from prometheus_client import Counter
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-prod')
 
 # Prometheus metrics setup
 metrics = PrometheusMetrics(app)
@@ -71,16 +74,61 @@ def burn():
 @app.route('/', methods=['GET'])
 def index():
     conn = get_db()
-    expenses = conn.execute('SELECT * FROM expenses ORDER BY date DESC, id DESC').fetchall()
+
+    # Get filter parameters
+    cat_filter = request.args.get('category', '').strip()
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+
+    # Build query with optional filters
+    query = 'SELECT * FROM expenses WHERE 1=1'
+    params = []
+    if cat_filter:
+        query += ' AND category = ?'
+        params.append(cat_filter)
+    if date_from:
+        query += ' AND date >= ?'
+        params.append(date_from)
+    if date_to:
+        query += ' AND date <= ?'
+        params.append(date_to)
+    query += ' ORDER BY date DESC, id DESC'
+
+    expenses = conn.execute(query, params).fetchall()
+
+    # Get all categories for filter dropdown (unfiltered)
+    all_categories = conn.execute(
+        'SELECT DISTINCT category FROM expenses ORDER BY category'
+    ).fetchall()
+    all_categories = [row['category'] for row in all_categories]
+
+    # Summary stats (unfiltered totals)
+    all_expenses = conn.execute('SELECT * FROM expenses').fetchall()
     conn.close()
+
     total = sum(e['amount'] for e in expenses)
     count = len(expenses)
-    # Build category summary for UI stats
+    grand_total = sum(e['amount'] for e in all_expenses)
+    grand_count = len(all_expenses)
+
+    # Category breakdown for filtered view
     categories = {}
     for e in expenses:
         cat = e['category']
         categories[cat] = categories.get(cat, 0) + e['amount']
-    return render_template('index.html', expenses=expenses, total=total, count=count, categories=categories)
+
+    return render_template('index.html',
+        expenses=expenses,
+        total=total,
+        count=count,
+        grand_total=grand_total,
+        grand_count=grand_count,
+        categories=categories,
+        all_categories=all_categories,
+        cat_filter=cat_filter,
+        date_from=date_from,
+        date_to=date_to
+    )
 
 @app.route('/add', methods=['GET', 'POST'])
 def add_expense():
@@ -106,6 +154,7 @@ def add_expense():
             )
         conn.close()
         expenses_added_total.inc()
+        flash(f'Expense "{title}" added successfully!', 'success')
         return redirect(url_for('index'))
 
     return render_template('add_expense.html')
@@ -116,6 +165,7 @@ def edit_expense(id):
     expense = conn.execute('SELECT * FROM expenses WHERE id = ?', (id,)).fetchone()
     if not expense:
         conn.close()
+        flash('Expense not found.', 'error')
         return redirect(url_for('index'))
 
     if request.method == 'POST':
@@ -140,6 +190,7 @@ def edit_expense(id):
                 (title, amount, category, date, id)
             )
         conn.close()
+        flash(f'Expense "{title}" updated.', 'success')
         return redirect(url_for('index'))
 
     conn.close()
@@ -148,10 +199,60 @@ def edit_expense(id):
 @app.route('/delete/<int:id>', methods=['GET', 'POST'])
 def delete_expense(id):
     conn = get_db()
-    with conn:
-        conn.execute('DELETE FROM expenses WHERE id = ?', (id,))
+    expense = conn.execute('SELECT * FROM expenses WHERE id = ?', (id,)).fetchone()
+    if expense:
+        title = expense['title']
+        with conn:
+            conn.execute('DELETE FROM expenses WHERE id = ?', (id,))
+        flash(f'Expense "{title}" deleted.', 'success')
     conn.close()
     return redirect(url_for('index'))
+
+# --- CSV Export ---
+@app.route('/export', methods=['GET'])
+def export_csv():
+    conn = get_db()
+    expenses = conn.execute('SELECT * FROM expenses ORDER BY date DESC, id DESC').fetchall()
+    conn.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['ID', 'Title', 'Amount', 'Category', 'Date'])
+    for e in expenses:
+        writer.writerow([e['id'], e['title'], e['amount'], e['category'], e['date']])
+
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=expenses.csv'}
+    )
+
+# --- Summary Stats API ---
+@app.route('/api/summary', methods=['GET'])
+def api_summary():
+    conn = get_db()
+    expenses = conn.execute('SELECT * FROM expenses').fetchall()
+    conn.close()
+
+    total = sum(e['amount'] for e in expenses)
+    count = len(expenses)
+    avg = total / count if count > 0 else 0
+
+    categories = {}
+    for e in expenses:
+        cat = e['category']
+        categories[cat] = round(categories.get(cat, 0) + e['amount'], 2)
+
+    # Top category
+    top_category = max(categories, key=categories.get) if categories else None
+
+    return jsonify({
+        "total": round(total, 2),
+        "count": count,
+        "average": round(avg, 2),
+        "categories": categories,
+        "top_category": top_category
+    }), 200
 
 # --- REST API Endpoints ---
 @app.route('/api/expenses', methods=['GET'])
